@@ -1,13 +1,15 @@
 """Vast.ai provider.
 
-Endpoints used (all verified against docs.vast.ai, host https://console.vast.ai):
+Endpoints used (docs.vast.ai, host https://console.vast.ai). IMPORTANT: the live API answers
+every URL WITHOUT a trailing slash with an HTTP 301 to the slashed URL (the docs omit the
+slashes), so every path below carries one:
   POST   /api/v0/bundles/                 search offers
   PUT    /api/v0/asks/{offer_id}/         create instance from an offer
-  GET    /api/v0/instances/{id}           one instance  -> {"instances": {...}}
-  GET    /api/v1/instances                list (keyset pagination via next_token)
-  PUT    /api/v0/instances/{id}           {"state": "running"|"stopped"}
-  DELETE /api/v0/instances/{id}           destroy
-  POST   /api/v0/instances/{id}/ssh       {"ssh_key": "..."}
+  GET    /api/v0/instances/{id}/          one instance  -> {"instances": {...}}
+  GET    /api/v1/instances/               list (keyset pagination via next_token)
+  PUT    /api/v0/instances/{id}/          {"state": "running"|"stopped"}
+  DELETE /api/v0/instances/{id}/          destroy
+  POST   /api/v0/instances/{id}/ssh/      {"ssh_key": "..."}
   GET    /api/v0/users/current/           balance
 Rate limiting: HTTP 429 without Retry-After, so we back off ourselves.
 """
@@ -70,6 +72,9 @@ class VastProvider(Provider):
                     raise ProviderError(f"Vast.ai {method} {url} failed after retries: HTTP {resp.status_code} {resp.text[:200]}", resp.status_code)
                 self._sleep(delay); delay = min(delay * 2, 30)
                 continue
+            if resp.status_code in (301, 302, 307, 308):
+                # Never silently treat a redirect as success (this once hid a failed DELETE).
+                raise ProviderError(f"Vast.ai {method} {url} was redirected to {resp.headers.get('location')}; refusing to guess.", resp.status_code)
             if resp.status_code == 404 and ok_404:
                 return None
             if resp.status_code in (401, 403):
@@ -79,7 +84,7 @@ class VastProvider(Provider):
             try:
                 body = resp.json()
             except json.JSONDecodeError:
-                return {}
+                raise ProviderError(f"Vast.ai {method} {url}: non-JSON response (HTTP {resp.status_code}): {resp.text[:120]!r}", resp.status_code) from None
             if isinstance(body, dict) and body.get("success") is False:
                 raise ProviderError(f"Vast.ai {method} {url}: {body.get('error')}: {body.get('msg')}", resp.status_code)
             return body if isinstance(body, dict) else {"_": body}
@@ -149,10 +154,12 @@ class VastProvider(Provider):
         return CreatedInstance(id=int(resp["new_contract"]), instance_api_key=resp.get("instance_api_key"))
 
     def get_instance(self, instance_id: int) -> Instance | None:
-        resp = self._request("GET", f"/api/v0/instances/{instance_id}", ok_404=True)
+        resp = self._request("GET", f"/api/v0/instances/{instance_id}/", ok_404=True)
         if resp is None:
             return None
-        inst = resp.get("instances")
+        if "instances" not in resp:
+            raise ProviderError(f"Vast.ai get instance {instance_id}: unexpected response {str(resp)[:200]}")
+        inst = resp["instances"]  # null once the instance is gone
         if isinstance(inst, list):
             inst = inst[0] if inst else None
         if not inst:
@@ -166,7 +173,7 @@ class VastProvider(Provider):
             params: dict[str, Any] = {"limit": 25}
             if token:
                 params["after_token"] = token
-            resp = self._request("GET", "/api/v1/instances", params=params) or {}
+            resp = self._request("GET", "/api/v1/instances/", params=params) or {}
             for raw in resp.get("instances", []):
                 if str(raw.get("label") or "").startswith(MANAGED_LABEL_PREFIX):
                     out.append(self._instance(raw))
@@ -222,12 +229,14 @@ class VastProvider(Provider):
         self._request("PUT", f"/api/v0/instances/{instance_id}/", json={"state": "stopped"})
 
     def destroy_instance(self, instance_id: int) -> None:
-        self._request("DELETE", f"/api/v0/instances/{instance_id}", ok_404=True)
+        self._request("DELETE", f"/api/v0/instances/{instance_id}/", ok_404=True)
 
     def attach_ssh_key(self, instance_id: int, public_key: str) -> None:
-        self._request("POST", f"/api/v0/instances/{instance_id}/ssh", json={"ssh_key": public_key.strip()})
+        self._request("POST", f"/api/v0/instances/{instance_id}/ssh/", json={"ssh_key": public_key.strip()})
 
     def get_billing(self) -> Billing | None:
+        # The live response has BOTH `balance` (cash) and `credit` (prepaid/signup credit); the docs
+        # mention only one or the other depending on the page. Spendable funds are their sum.
         resp = self._request("GET", "/api/v0/users/current/") or {}
-        bal = resp.get("balance", resp.get("credit"))
-        return Billing(balance_usd=float(bal) if bal is not None else None)
+        parts = [resp.get(k) for k in ("balance", "credit") if isinstance(resp.get(k), (int, float))]
+        return Billing(balance_usd=float(sum(parts)) if parts else None)

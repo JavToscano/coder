@@ -26,6 +26,7 @@ def build_query(cfg: Config, variant: Variant) -> OfferQuery:
         min_disk_gb=required_disk_gb(variant),
         min_inet_down_mbps=cfg.offers.min_inet_down_mbps,
         countries=[c.upper() for c in cfg.offers.countries],
+        exclude_gpus=cfg.offers.exclude_gpus,
     )
 
 
@@ -41,6 +42,7 @@ def _matches_preferred(offer: Offer, preferred: list[str]) -> bool:
 def filter_offers(offers: list[Offer], q: OfferQuery) -> list[Offer]:
     """Authoritative filter; the provider-side query is only a pre-filter."""
     wanted = [_norm(g) for g in q.gpu_names]
+    banned = [_norm(g) for g in q.exclude_gpus]
     out = []
     for o in offers:
         if o.num_gpus not in q.gpu_counts:
@@ -54,6 +56,8 @@ def filter_offers(offers: list[Offer], q: OfferQuery) -> list[Offer]:
         if q.min_inet_down_mbps and o.inet_down_mbps < q.min_inet_down_mbps:
             continue
         if q.countries and o.country not in q.countries:
+            continue
+        if any(b in _norm(o.gpu_name) for b in banned):
             continue
         if wanted and not any(w in _norm(o.gpu_name) for w in wanted):
             continue

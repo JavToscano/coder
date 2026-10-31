@@ -8,7 +8,14 @@ opencode                               # use it from your Mac, project files sta
 coder stop                             # tunnel closed, OpenCode config restored, instance DESTROYED + verified
 ```
 
-> **Status: MVP, not yet exercised against live Vast.ai.** The 68 unit tests use a mocked Vast API (httpx `MockTransport`), a fake provider, and fake SSH/remote layers. The Vast request formats follow docs.vast.ai, but the SSH/remote provisioning scripts have never run on a real GPU host. Your first session is the real integration test: start with `qwen3-coder-30b-a3b` (about $1/h) and check `coder logs` and the Vast console. See [Known limitations](#known-limitations).
+> **Status: Vast.ai API layer verified live; full session end-to-end still being validated.**
+>
+> | Verified against the real Vast.ai API | Not yet confirmed on real hardware |
+> |---|---|
+> | Offer search and filtering (`coder offers`), account balance/credit, instance list and lookup, instance creation, API auth | SSH attach + tunnel, remote provisioning, model download, vLLM/SGLang launch, the on-instance watchdog |
+> | Live testing found and fixed: URLs must end in `/` (the API 301-redirects slash-less URLs, unlike its docs); balance is `balance` + `credit`; CMP mining GPUs must be excluded | A complete `start` → use → `stop` cycle that ends with the instance verified destroyed |
+>
+> The 76 unit tests use a mocked Vast API, a fake provider and fake SSH/remote layers. The remote provisioning scripts have not been confirmed on a real GPU host yet. For your first session use `qwen3-coder-30b-a3b` (about $0.25–0.60/h), watch `coder logs -f`, and check the [Vast console](https://cloud.vast.ai/instances/) after `coder stop`. See [Known limitations](#known-limitations).
 
 ## Install
 
@@ -26,6 +33,8 @@ ln -s "$PWD/.venv/bin/coder" /usr/local/bin/coder    # or add .venv/bin to PATH
 | Vast.ai API key ([create](https://cloud.vast.ai/manage-keys/)) | `export VAST_API_KEY=...` **or** `coder config --store-key vast` (macOS Keychain; `security` prompts, so the key never appears in argv) | yes |
 | Hugging Face token | `HF_TOKEN` env or `coder config --store-key hf` | only for gated repos / faster downloads |
 | S3 credentials | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` env | only with `storage.enabled` |
+
+**`.env` files:** `coder` also reads `VAST_API_KEY`, `HF_TOKEN` and the `AWS_*` keys from `$CODER_ENV_FILE`, `./.env`, then `~/.config/coder/.env` (see [.env.example](.env.example)). Real environment variables win; only those allow-listed keys are imported, so an unrelated project `.env` can't inject anything else. `.env` and `.env.*` are git-ignored, and `.env` is never uploaded to the instance.
 
 Keys are never read from or written to the config file (the config schema has no secret fields and rejects unknown keys).
 
@@ -146,15 +155,15 @@ State lives in `~/.local/state/coder/session.json` (mode `0600`, flock-guarded).
 ## Tests
 
 ```bash
-.venv/bin/pytest                                            # 68 tests, offline, nothing billable
+.venv/bin/pytest                                            # 76 tests, offline, nothing billable
 CODER_LIVE_TESTS=1 VAST_API_KEY=… pytest -m live            # read-only API checks
 CODER_LIVE_TESTS=1 CODER_LIVE_BILLABLE=1 VAST_API_KEY=… pytest -m live   # also rents the cheapest box for seconds
 ```
 
 ## Known limitations
 
-- Not yet run end-to-end on real Vast hardware (see the top of this file).
-- Vast doc inconsistencies handled defensively: search `type` spelling (we retry `ondemand` after a 400); `gpu_name` formats (GPU names are matched client-side, not in the query); `inet_down` units are assumed Mb/s (the schema says MB/s, which would make estimates ~8× pessimistic); `balance` vs `credit`.
+- Not yet confirmed end-to-end on real Vast hardware: the API layer is verified live, the SSH/provisioning/serving steps and a full verified-destroy cycle are not (see the top of this file).
+- Vast doc inconsistencies handled defensively: endpoints need a trailing `/` (confirmed live; redirects are treated as errors); search `type` spelling (we retry `ondemand` after a 400); `gpu_name` formats (GPU names are matched client-side, not in the query); `inet_down` units are assumed Mb/s (the schema says MB/s, which would make estimates ~8× pessimistic); the account has both `balance` and `credit`, and we sum them (confirmed live).
 - Not verified against official docs: the `/metrics` gauge names for in-flight tracking (from memory of vLLM/SGLang), tool-parser values for Qwen3-Coder-30B, gpt-oss-120b and Qwen3.8-27B, and the instance-scoped key's permission to `DELETE` (stated in Vast's hello-world guide; if it fails, the watchdog logs it in `/root/coder/watchdog.log`).
 - Docker image tags default to `latest`; pin tags in `images:` once you find a working combination. Qwen3-Coder-Next needs vLLM ≥0.15.0.
 - Vast's `onstart` is not used; everything runs over SSH after boot, so a few extra minutes of billed time are possible versus a pre-baked image.

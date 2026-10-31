@@ -112,3 +112,26 @@ def test_opencode_without_default_model_leaves_model(isolated_home):
     p.write_text(json.dumps({"model": "a/b"}))
     _apply(p, set_default=False)
     assert json.loads(p.read_text())["model"] == "a/b"
+
+
+def test_dotenv_parsing_and_precedence(isolated_home, tmp_path, monkeypatch):
+    from coder.config import load_dotenv, parse_dotenv
+    assert parse_dotenv("# c\nexport A=1\nB='x y'\nC=\"q\" \nD=v # note\nbad line\n") == {"A": "1", "B": "x y", "C": "q", "D": "v"}
+
+    proj = tmp_path / "proj"; proj.mkdir()
+    (proj / ".env").write_text("VAST_API_KEY=from-cwd\nHF_TOKEN=hf-cwd\nPATH=/evil\nEXTRA=1\n")
+    cfgdir = isolated_home / "config"; cfgdir.mkdir(parents=True)
+    (cfgdir / ".env").write_text("VAST_API_KEY=from-config\nAWS_ACCESS_KEY_ID=ak\n")
+    monkeypatch.chdir(proj)
+    for k in ("VAST_API_KEY", "HF_TOKEN", "AWS_ACCESS_KEY_ID", "EXTRA"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("HF_TOKEN", "from-shell")
+    import os
+    path_before = os.environ["PATH"]
+    assert len(load_dotenv()) == 2
+    assert os.environ["VAST_API_KEY"] == "from-cwd"      # cwd beats config dir
+    assert os.environ["HF_TOKEN"] == "from-shell"        # real env beats .env
+    assert os.environ["AWS_ACCESS_KEY_ID"] == "ak"
+    assert os.environ["PATH"] == path_before and "EXTRA" not in os.environ  # allow-list only
+    for k in ("VAST_API_KEY", "AWS_ACCESS_KEY_ID"):
+        monkeypatch.delenv(k)

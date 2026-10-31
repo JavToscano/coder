@@ -201,3 +201,24 @@ def test_stale_session_cleared_when_instance_vanished(make_manager):
     with pytest.raises(CoderError, match="Stale"):
         m.start(yes=True)
     assert SessionStore().load() is None
+
+
+def test_destroy_not_verified_while_instance_still_listed(make_manager):
+    prov = FakeProvider()
+    m = make_manager(prov)
+    s, _ = m.start(yes=True)
+    real_get = prov.get_instance
+    prov.get_instance = lambda i: None  # a broken/lying single-instance lookup must not be trusted
+    prov.destroy_instance = lambda i: None  # DELETE silently did nothing
+    with pytest.raises(ProvisioningError, match="not verified"):
+        m.destroy(yes=True)
+    assert SessionStore().load().phase == "destroy_failed" and s.instance_id in prov.instances
+
+
+def test_refuses_to_rent_when_balance_too_low(make_manager):
+    from coder.providers.base import Billing
+    prov = FakeProvider()
+    prov.get_billing = lambda: Billing(0.0)
+    with pytest.raises(CoderError, match="balance"):
+        make_manager(prov).start(yes=True)
+    assert prov.instances == {}

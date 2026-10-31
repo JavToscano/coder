@@ -44,6 +44,7 @@ class OfferQuery:
     min_disk_gb: float = 0.0
     min_inet_down_mbps: float = 0.0
     gpu_names: list[str] = field(default_factory=list)  # substring match, empty = any
+    exclude_gpus: list[str] = field(default_factory=list)
     countries: list[str] = field(default_factory=list)
     limit: int = 64
 

@@ -95,9 +95,9 @@ def test_destroy_stop_start_attach_requests():
     calls = []
     p = provider(lambda r: (calls.append((r.method, r.url.path, r.content)), httpx.Response(200, json={"success": True}))[1])
     p.destroy_instance(7); p.stop_instance(7); p.start_instance(7); p.attach_ssh_key(7, "ssh-ed25519 AAA\n")
-    assert calls[0][:2] == ("DELETE", "/api/v0/instances/7")
+    assert calls[0][:2] == ("DELETE", "/api/v0/instances/7/")
     assert json.loads(calls[1][2]) == {"state": "stopped"} and json.loads(calls[2][2]) == {"state": "running"}
-    assert calls[3][:2] == ("POST", "/api/v0/instances/7/ssh") and json.loads(calls[3][2]) == {"ssh_key": "ssh-ed25519 AAA"}
+    assert calls[3][:2] == ("POST", "/api/v0/instances/7/ssh/") and json.loads(calls[3][2]) == {"ssh_key": "ssh-ed25519 AAA"}
 
 
 def test_rate_limit_backoff_then_success_and_exhaustion():
@@ -119,5 +119,43 @@ def test_auth_error_message():
         provider(lambda r: httpx.Response(401)).get_billing()
 
 
-def test_billing():
+def test_billing_sums_cash_balance_and_credit():
     assert provider(lambda r: httpx.Response(200, json={"balance": 12.5})).get_billing().balance_usd == 12.5
+    assert provider(lambda r: httpx.Response(200, json={"balance": 0, "credit": 4.69})).get_billing().balance_usd == 4.69
+    assert provider(lambda r: httpx.Response(200, json={"balance": 1.0, "credit": 2.0})).get_billing().balance_usd == 3.0
+    assert provider(lambda r: httpx.Response(200, json={})).get_billing().balance_usd is None
+
+
+def test_all_paths_have_trailing_slash_because_live_api_redirects():
+    seen = []
+
+    def h(req):
+        seen.append((req.method, req.url.path))
+        if req.url.path.startswith("/api/v1/instances"):
+            return httpx.Response(200, json={"instances": [], "next_token": None})
+        return httpx.Response(200, json={"success": True, "instances": {"id": 1}, "offers": [], "new_contract": 1})
+
+    p = provider(h)
+    p.search_offers(Q); p.get_instance(1); p.list_managed_instances(); p.destroy_instance(1)
+    p.stop_instance(1); p.attach_ssh_key(1, "k"); p.get_billing()
+    p.create_instance(make_offer(), InstanceSpec("i", "l", 1))
+    assert seen and all(path.endswith("/") for _, path in seen), seen
+
+
+def test_redirect_is_an_error_not_success():
+    p = provider(lambda r: httpx.Response(301, headers={"location": "https://console.vast.ai/x/"}, text="<html>"))
+    with pytest.raises(ProviderError, match="redirected"):
+        p.destroy_instance(1)
+    with pytest.raises(ProviderError, match="redirected"):
+        p.get_instance(1)
+
+
+def test_non_json_body_is_an_error():
+    with pytest.raises(ProviderError, match="non-JSON"):
+        provider(lambda r: httpx.Response(200, text="<html>oops</html>")).get_instance(1)
+
+
+def test_gone_instance_is_null_but_missing_key_is_error():
+    assert provider(lambda r: httpx.Response(200, json={"instances": None})).get_instance(1) is None
+    with pytest.raises(ProviderError, match="unexpected"):
+        provider(lambda r: httpx.Response(200, json={"something": 1})).get_instance(1)

@@ -129,6 +129,17 @@ class Manager:
             raise CoderError(
                 f"Estimated session cost ${est.session_cost:.2f} exceeds limits.max_session_cost ${cfg.limits.max_session_cost:.2f}."
             )
+        try:
+            bill = self.provider.get_billing()
+        except ProviderError as e:
+            bill = None
+            self.ui.warn(f"Could not read account balance ({e}); continuing.")
+        need = est.startup_cost + best.dph_total  # startup plus at least one hour of use
+        if bill and bill.balance_usd is not None and bill.balance_usd < need:
+            raise CoderError(
+                f"Account balance ${bill.balance_usd:.2f} is below the ~${need:.2f} needed to start "
+                f"(startup + 1 h). Add credit at https://cloud.vast.ai/billing/ and retry."
+            )
         spent, n = costs.month_to_date()
         if spent + est.session_cost > cfg.limits.monthly_budget:
             self.ui.warn(f"Month-to-date ${spent:.2f} ({n} sessions) + this session ${est.session_cost:.2f} exceeds your ${cfg.limits.monthly_budget:.0f} monthly budget.")
@@ -283,9 +294,10 @@ class Manager:
             try:
                 self.provider.destroy_instance(s.instance_id)
                 inst = self.provider.get_instance(s.instance_id)
-                if inst is None or inst.state is InstanceState.GONE:
+                listed = any(i.id == s.instance_id for i in self.provider.list_managed_instances())
+                if (inst is None or inst.state is InstanceState.GONE) and not listed:
                     return
-                last = ProvisioningError(f"instance still present (state {inst.state.value})")
+                last = ProvisioningError(f"instance still present (state {inst.state.value if inst else 'listed'})")
             except ProviderError as e:
                 last = e
             self.sleep(3 * (i + 1))

@@ -14,7 +14,7 @@ from rich.prompt import Confirm, FloatPrompt, Prompt
 from rich.table import Table
 
 from . import costs, opencode, paths
-from .config import Config, dump_config, keychain_set_interactive, load_config
+from .config import Config, dump_config, keychain_set_interactive, load_config, load_dotenv
 from .errors import CoderError
 from .lifecycle import Manager
 from .models import load_registry
@@ -51,6 +51,7 @@ class RichUI:
 
 def _load() -> Config:
     logging.basicConfig(level=logging.WARNING)
+    load_dotenv()
     return load_config()
 
 
@@ -280,6 +281,8 @@ def config(
         console.print(f"Wrote {p}. API keys are never written here: use VAST_API_KEY or `coder config --store-key vast`.")
         return
     cfg = load_config()
+    if used := load_dotenv():
+        console.print(f"[dim]env files: {', '.join(map(str, used))} (secrets are not displayed)[/dim]")
     console.print(f"[dim]{paths.config_file()}{'' if paths.config_file().exists() else ' (not present, showing defaults)'}[/dim]")
     console.print(yaml.safe_dump(cfg.model_dump(mode="json", exclude_none=True), sort_keys=False))
 

@@ -65,3 +65,10 @@ def test_ledger_month_to_date(isolated_home):
     costs.record_session("old", now - 86400 * 100, now - 86400 * 100 + 10, 99.0, "m")
     total, n = costs.month_to_date(now)
     assert (total, n) == (10.0, 2)
+
+
+def test_excluded_gpus_are_filtered():
+    q, _ = _q("qwen3-coder-30b-a3b")
+    q.exclude_gpus = ["CMP"]
+    ids = [o.id for o in filter_offers([make_offer(1, n=1, ram=66, gpu="CMP 170HX"), make_offer(2, n=1, ram=80, gpu="A100")], q)]
+    assert ids == [2]

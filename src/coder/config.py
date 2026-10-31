@@ -20,6 +20,8 @@ class _Strict(BaseModel):
 
 class OfferConfig(_Strict):
     preferred_gpus: list[str] = Field(default_factory=lambda: ["H100", "H200", "A100", "RTX 6000Ada", "L40S"])
+    # Substring match on GPU name. CMP cards are mining GPUs (crippled PCIe, no practical vLLM support).
+    exclude_gpus: list[str] = Field(default_factory=lambda: ["CMP"])
     min_vram_gb: float = 0  # per GPU, on top of the model's own requirement
     min_system_ram_gb: float = 32
     min_reliability: float = Field(0.97, ge=0, le=1)
@@ -117,6 +119,61 @@ def dump_config(cfg: Config) -> str:
 
 
 # --- credentials -----------------------------------------------------------
+
+# Only these variables are ever imported from a .env file, so a project .env that happens to
+# be in the current directory cannot inject anything else (PATH, proxies, ...) into coder.
+DOTENV_KEYS = frozenset({
+    "VAST_API_KEY", "HF_TOKEN", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+})
+
+
+def dotenv_candidates() -> list[Path]:
+    """Highest priority first: $CODER_ENV_FILE, ./.env, <config dir>/.env."""
+    out = []
+    if explicit := os.environ.get("CODER_ENV_FILE"):
+        out.append(Path(explicit).expanduser())
+    out += [Path.cwd() / ".env", paths.config_dir() / ".env"]
+    return out
+
+
+def parse_dotenv(text: str) -> dict[str, str]:
+    """Minimal dotenv: `KEY=value`, optional `export `, quotes, `#` comments. No interpolation."""
+    values: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        key, sep, val = line.partition("=")
+        key, val = key.strip(), val.strip()
+        if not sep or not key:
+            continue
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+            val = val[1:-1]
+        else:
+            val = val.split(" #", 1)[0].rstrip()
+        values[key] = val
+    return values
+
+
+def load_dotenv() -> list[Path]:
+    """Import allow-listed keys from .env files into os.environ. Real environment variables
+    always win, and earlier (higher-priority) files win over later ones. Returns files used."""
+    used: list[Path] = []
+    for f in dotenv_candidates():
+        try:
+            if not f.is_file():
+                continue
+            parsed = parse_dotenv(f.read_text())
+        except OSError:
+            continue
+        used.append(f)
+        for k, v in parsed.items():
+            if k in DOTENV_KEYS and v and k not in os.environ:
+                os.environ[k] = v
+    return used
+
 
 KEYCHAIN_SERVICE_PREFIX = "coder-"
 
