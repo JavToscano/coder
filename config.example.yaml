@@ -1,0 +1,50 @@
+# Copy to ~/.config/coder/config.yaml (or run `coder config --init`).
+# No secrets belong here: use VAST_API_KEY / HF_TOKEN env vars or `coder config --store-key vast`.
+provider: vast
+model: qwen3-coder-next          # any key from `coder models`
+# variant: fp8                   # default per model; e.g. bf16
+engine: auto                     # auto | vllm | sglang (auto = first documented engine for the checkpoint)
+# context_length: 131072         # default per model; must be <= model maximum
+images:                          # pin tags once you have a combination that works for you
+  vllm: vllm/vllm-openai:latest
+  sglang: lmsysorg/sglang:latest
+
+offers:
+  preferred_gpus: [H100, H200, A100, RTX 6000Ada, L40S]   # 10% ranking bonus, not a hard filter
+  min_vram_gb: 0                 # extra per-GPU floor on top of the model's own
+  min_system_ram_gb: 32
+  min_reliability: 0.97
+  min_inet_down_mbps: 200
+  countries: []                  # e.g. [US, CA, DE]; empty = anywhere
+
+limits:
+  max_hourly_price: 3.0          # USD/h, hard filter on offers
+  max_session_cost: 10.0         # refuses to start if the estimate exceeds it; also caps the remote auto-destroy deadline
+  max_session_hours: 6.0         # remote watchdog destroys the instance after this
+  startup_timeout_minutes: 35    # whole boot+download+load phase; failure => automatic destroy
+  warn_at_fraction: 0.8          # `coder status` warns at 80% of max_session_cost / monthly budget
+  monthly_budget: 75.0
+  expected_session_hours: 3.0    # for cost projections only
+
+idle:
+  enabled: false                 # opt-in remote idle shutdown (read README "Idle shutdown" first)
+  timeout_minutes: 20
+
+ssh:
+  user: root
+  # key_path: ~/.local/state/coder/ssh/id_ed25519   # default: dedicated key generated for coder
+  local_port: 18000
+  connect_timeout_s: 15
+
+storage:                         # optional S3-compatible model cache (Strategy B)
+  enabled: false
+  bucket: ""
+  prefix: coder-models
+  # endpoint_url: https://<account>.r2.cloudflarestorage.com
+  # region: auto
+  # credentials: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars
+
+opencode:
+  # config_path: ~/.config/opencode/opencode.json
+  provider_id: coder
+  set_default_model: true

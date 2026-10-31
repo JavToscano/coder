@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coder"
+version = "0.1.0"
+description = "On-demand, ephemeral cloud GPU orchestrator for local AI coding agents (OpenCode)"
+requires-python = ">=3.12"
+dependencies = [
+  "typer>=0.12",
+  "pydantic>=2.6",
+  "httpx>=0.27",
+  "rich>=13",
+  "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+coder = "coder.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+coder = ["data/*.yaml", "data/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -m 'not live'"
+markers = ["live: talks to real (billable) infrastructure; run with CODER_LIVE_TESTS=1 pytest -m live"]

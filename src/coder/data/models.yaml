@@ -1,0 +1,140 @@
+# Model registry. Add your own models in ~/.config/coder/models.yaml (same schema);
+# entries with the same key override the built-in ones.
+#
+# Per model:
+#   repo / variants[*].repo : official Hugging Face repository
+#   variants[*].quant       : checkpoint format (must be supported by the engines listed)
+#   download_gb             : approximate checkpoint size on disk
+#   min_total_vram_gb       : weights + a modest KV cache budget, summed across all GPUs
+#   min_gpu_vram_gb         : smallest acceptable single GPU
+#   gpus                    : allowed GPU counts (tensor-parallel sizes)
+#   engines                 : engines with a documented serving recipe for this checkpoint
+#   tool_call_parser        : value for --tool-call-parser
+#
+# Sizes and VRAM are estimates derived from parameter counts and checkpoint precision
+# (the Hugging Face cards do not publish on-disk sizes). `verified` records what the
+# model card itself documents; `notes` records what it does not.
+models:
+  qwen3-coder-next:
+    display_name: Qwen3-Coder-Next
+    served_name: Qwen3-Coder-Next
+    description: 80B MoE (3B active), non-thinking, 256K native context. Best agentic quality here.
+    context_length: 262144
+    default_context: 131072
+    tool_calling: true
+    sampling: {temperature: 1.0, top_p: 0.95, top_k: 40}
+    default_variant: fp8
+    variants:
+      fp8:
+        repo: Qwen/Qwen3-Coder-Next-FP8
+        quant: fp8
+        download_gb: 85
+        min_total_vram_gb: 150
+        min_gpu_vram_gb: 40
+        gpus: [2, 4]
+        engines: [vllm, sglang]
+        min_engine_version: {vllm: "0.15.0", sglang: "0.5.8"}
+        tool_call_parser: qwen3_coder
+        notes: Model card serve commands use tensor-parallel 2 (vLLM and SGLang).
+      bf16:
+        repo: Qwen/Qwen3-Coder-Next
+        quant: bf16
+        download_gb: 160
+        min_total_vram_gb: 190
+        min_gpu_vram_gb: 48
+        gpus: [4, 8]
+        engines: [vllm, sglang]
+        min_engine_version: {vllm: "0.15.0", sglang: "0.5.8"}
+        tool_call_parser: qwen3_coder
+        notes: 80B params in BF16 is ~160 GB of weights, so a single 80 GB GPU can NOT serve it.
+
+  qwen3-coder-30b-a3b:
+    display_name: Qwen3-Coder-30B-A3B-Instruct
+    served_name: Qwen3-Coder-30B-A3B
+    description: 30B MoE (3.3B active). Cheap, fast, good for single-GPU sessions.
+    context_length: 262144
+    default_context: 131072
+    tool_calling: true
+    sampling: {temperature: 0.7, top_p: 0.8, top_k: 20, repetition_penalty: 1.05}
+    default_variant: fp8
+    variants:
+      fp8:
+        repo: Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8
+        quant: fp8
+        download_gb: 32
+        min_total_vram_gb: 48
+        min_gpu_vram_gb: 40
+        gpus: [1, 2]
+        engines: [vllm, sglang]
+        tool_call_parser: qwen3_coder
+        notes: Model card gives no parser flag; qwen3_coder is the parser vLLM/SGLang ship for the Qwen3-Coder tool format.
+      bf16:
+        repo: Qwen/Qwen3-Coder-30B-A3B-Instruct
+        quant: bf16
+        download_gb: 62
+        min_total_vram_gb: 80
+        min_gpu_vram_gb: 40
+        gpus: [1, 2]
+        engines: [vllm, sglang]
+        tool_call_parser: qwen3_coder
+
+  devstral-small-2:
+    display_name: Devstral Small 2 (24B)
+    served_name: Devstral-Small-2
+    description: Mistral 24B coding agent model, FP8 checkpoint, 256K context.
+    context_length: 262144
+    default_context: 131072
+    tool_calling: true
+    default_variant: fp8
+    variants:
+      fp8:
+        repo: mistralai/Devstral-Small-2-24B-Instruct-2512
+        quant: fp8
+        download_gb: 26
+        min_total_vram_gb: 40
+        min_gpu_vram_gb: 24
+        gpus: [1, 2]
+        engines: [vllm, sglang]
+        tool_call_parser: mistral
+        notes: Card requires mistral_common >= 1.8.6 (bundled in recent vLLM images). Card serve command uses tp 2; 1 GPU with >=40 GB is expected to work but is not documented.
+
+  qwen3.8-27b:
+    display_name: Qwen3.8-27B
+    served_name: Qwen3.8-27B
+    description: 27B dense multimodal model, thinking on by default.
+    context_length: 262144
+    default_context: 131072
+    tool_calling: true
+    default_variant: bf16
+    variants:
+      bf16:
+        repo: Qwen/Qwen3.8-27B
+        quant: bf16
+        download_gb: 56
+        min_total_vram_gb: 80
+        min_gpu_vram_gb: 40
+        gpus: [1, 2, 4]
+        engines: [vllm, sglang]
+        tool_call_parser: qwen3_coder
+        reasoning_parser: qwen3
+        notes: The Qwen3.8 card only links to serving recipes. Parsers are copied from the Qwen3.6-27B card (qwen3 reasoning + qwen3_coder tools); verify against recipes.vllm.ai if tool calls look malformed.
+
+  gpt-oss-120b:
+    display_name: gpt-oss-120b
+    served_name: gpt-oss-120b
+    description: OpenAI 117B MoE (5.1B active), MXFP4 weights, fits one 80 GB GPU.
+    context_length: 131072
+    default_context: 131072
+    tool_calling: true
+    default_variant: mxfp4
+    variants:
+      mxfp4:
+        repo: openai/gpt-oss-120b
+        quant: mxfp4
+        download_gb: 65
+        min_total_vram_gb: 80
+        min_gpu_vram_gb: 80
+        gpus: [1, 2, 4]
+        engines: [vllm, sglang]
+        tool_call_parser: openai
+        notes: The model card does not name a tool parser; "openai" is the vLLM parser for the harmony format. Context 131072 is from OpenAI's release notes, not the card.
