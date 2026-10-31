@@ -27,6 +27,7 @@ def build_query(cfg: Config, variant: Variant) -> OfferQuery:
         min_inet_down_mbps=cfg.offers.min_inet_down_mbps,
         countries=[c.upper() for c in cfg.offers.countries],
         exclude_gpus=cfg.offers.exclude_gpus,
+        gpu_names=cfg.offers.include_gpus,
     )
 
 

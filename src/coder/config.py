@@ -20,6 +20,8 @@ class _Strict(BaseModel):
 
 class OfferConfig(_Strict):
     preferred_gpus: list[str] = Field(default_factory=lambda: ["H100", "H200", "A100", "RTX 6000Ada", "L40S"])
+    # Hard allow-list (substring match on GPU name); empty = any. e.g. ["A100", "H100", "4090"]
+    include_gpus: list[str] = Field(default_factory=list)
     # Substring match on GPU name. CMP cards are mining GPUs (crippled PCIe, no practical vLLM support).
     exclude_gpus: list[str] = Field(default_factory=lambda: ["CMP"])
     min_vram_gb: float = 0  # per GPU, on top of the model's own requirement

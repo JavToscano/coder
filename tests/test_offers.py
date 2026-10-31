@@ -72,3 +72,12 @@ def test_excluded_gpus_are_filtered():
     q.exclude_gpus = ["CMP"]
     ids = [o.id for o in filter_offers([make_offer(1, n=1, ram=66, gpu="CMP 170HX"), make_offer(2, n=1, ram=80, gpu="A100")], q)]
     assert ids == [2]
+
+
+def test_include_gpus_allow_list_from_config():
+    cfg = Config()
+    cfg.offers.include_gpus = ["A100", "4090"]
+    _, v = load_registry().get("qwen3-coder-30b-a3b").variant(None)
+    q = build_query(cfg, v)
+    ids = [o.id for o in filter_offers([make_offer(1, n=1, ram=48, gpu="Quadro RTX 8000"), make_offer(2, n=1, ram=80, gpu="A100 SXM4"), make_offer(3, n=1, ram=24, gpu="RTX 4090")], q)]
+    assert ids == [2]  # 4090 (24 GB) is below the checkpoint's per-GPU minimum; RTX 8000 is not on the list

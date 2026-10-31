@@ -11,6 +11,7 @@ images:                          # pin tags once you have a combination that wor
 
 offers:
   preferred_gpus: [H100, H200, A100, RTX 6000Ada, L40S]   # 10% ranking bonus, not a hard filter
+  include_gpus: []               # hard allow-list by name substring, e.g. [A100, H100, 4090]; empty = any
   exclude_gpus: [CMP]            # substring match; CMP = mining cards, poor/unsupported for LLM serving
   min_vram_gb: 0                 # extra per-GPU floor on top of the model's own
   min_system_ram_gb: 32
