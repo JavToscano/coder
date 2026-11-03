@@ -76,13 +76,13 @@ class Manager:
 
     # --------------------------------------------------------------------- start
     def start(self, model_key: str | None = None, *, variant: str | None = None, engine: str | None = None,
-              context: int | None = None, yes: bool = False) -> tuple[Session, bool]:
+              context: int | None = None, yes: bool = False, offer_rank: int | None = None) -> tuple[Session, bool]:
         """Returns (session, reused)."""
         with self.store.lock():
             existing = self.store.load()
             if existing:
                 return self._reuse(existing), True
-            return self._start_new(model_key or self.cfg.model, variant, engine, context, yes), False
+            return self._start_new(model_key or self.cfg.model, variant, engine, context, yes, offer_rank), False
 
     def _reuse(self, s: Session) -> Session:
         if s.phase != "ready":
@@ -103,7 +103,7 @@ class Manager:
         return s
 
     def _start_new(self, model_key: str, variant_arg: str | None, engine_arg: str | None,
-                   context_arg: int | None, yes: bool) -> Session:
+                   context_arg: int | None, yes: bool, offer_rank: int | None = None) -> Session:
         cfg = self.cfg
         spec = self.registry.get(model_key)
         vname, variant = spec.variant(variant_arg or cfg.variant)
@@ -121,6 +121,10 @@ class Manager:
                 f">= {variant.min_total_vram_gb:g} GB total, <= ${cfg.limits.max_hourly_price}/h, reliability >= {cfg.offers.min_reliability}. "
                 "Raise limits.max_hourly_price, relax offers.*, or try a smaller model/variant."
             )
+        if offer_rank is not None and not 1 <= offer_rank <= len(candidates):
+            raise CoderError(f"--offer {offer_rank} is out of range: {len(candidates)} offers match (see `coder offers`).")
+        # An explicit pick is never silently swapped for another host, so it gets no fallback list.
+        candidates = candidates[offer_rank - 1:offer_rank] if offer_rank else candidates
         best = candidates[0]
         est = costs.estimate(best, variant.download_gb, cfg.limits.expected_session_hours)
         self.ui.show_plan(best, est, spec, vname, variant, engine, context)

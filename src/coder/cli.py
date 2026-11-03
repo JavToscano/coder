@@ -81,11 +81,12 @@ def start(
     variant: Annotated[Optional[str], typer.Option(help="Checkpoint variant, e.g. fp8 or bf16.")] = None,
     engine: Annotated[Optional[str], typer.Option(help="vllm or sglang (default: from config).")] = None,
     context: Annotated[Optional[int], typer.Option(help="Context length in tokens.")] = None,
+    offer: Annotated[Optional[int], typer.Option("--offer", "-o", min=1, help="Rent row N of `coder offers` instead of the top one.")] = None,
     yes: YES = False,
 ) -> None:
     """Rent a GPU, load the model, open the tunnel and wire up OpenCode."""
     mgr = _manager(_load())
-    s, reused = mgr.start(model, variant=variant, engine=engine, context=context, yes=yes)
+    s, reused = mgr.start(model, variant=variant, engine=engine, context=context, yes=yes, offer_rank=offer)
     console.print(f"\n[bold green]{'Reusing existing session' if reused else 'Ready'}.[/bold green]")
     console.print(f"  Model     {s.served_name}  ({s.engine}, {s.context_length} ctx)")
     console.print(f"  Endpoint  {s.base_url}  (SSH tunnel, bearer token required)")

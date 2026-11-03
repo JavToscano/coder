@@ -93,6 +93,27 @@ def test_startup_timeout(make_manager, cfg):
     assert prov.instances == {}
 
 
+def test_offer_rank_picks_that_row(make_manager):
+    prov = FakeProvider([make_offer(1, price=2.0), make_offer(2, price=2.5), make_offer(3, price=2.8)])
+    s, _ = make_manager(prov).start(yes=True, offer_rank=2)
+    assert prov.instances[s.instance_id].dph_total == 2.5
+
+
+def test_offer_rank_has_no_fallback(make_manager):
+    prov2 = FakeProvider([make_offer(1, price=2.0), make_offer(2, price=2.5)])
+    prov2.unavailable_ids = {2}
+    with pytest.raises(ProvisioningError):
+        make_manager(prov2).start(yes=True, offer_rank=2)  # never silently rents another host
+    assert prov2.instances == {}
+
+
+def test_offer_rank_out_of_range(make_manager):
+    prov = FakeProvider([make_offer(1)])
+    with pytest.raises(CoderError, match="out of range"):
+        make_manager(prov).start(yes=True, offer_rank=2)
+    assert prov.instances == {}
+
+
 def test_offer_gone_falls_back_to_next(make_manager):
     prov = FakeProvider([make_offer(1, price=2.0), make_offer(2, price=2.5)])
     prov.unavailable_ids = {1}
