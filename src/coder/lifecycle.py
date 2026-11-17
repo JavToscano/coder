@@ -27,6 +27,7 @@ class UI(Protocol):
     def say(self, msg: str) -> None: ...
     def warn(self, msg: str) -> None: ...
     def confirm(self, msg: str, *, default: bool = False) -> bool: ...
+    def choose_offer(self, title: str, found: list[Offer], download_gb: float, session_hours: float, top: int, interactive: bool) -> int: ...
     def show_plan(self, offer: Offer, est: costs.Estimate, model: ModelSpec, variant_name: str, variant: Variant, engine: str, context: int) -> None: ...
 
 
@@ -123,6 +124,11 @@ class Manager:
             )
         if offer_rank is not None and not 1 <= offer_rank <= len(candidates):
             raise CoderError(f"--offer {offer_rank} is out of range: {len(candidates)} offers match (see `coder offers`).")
+        if offer_rank is None and len(candidates) > 1:
+            idx = self.ui.choose_offer(f"{spec.display_name} / {vname}: {len(candidates)} offers", candidates,
+                                       variant.download_gb, cfg.limits.expected_session_hours, 8, not yes)
+            if idx:
+                offer_rank = idx + 1
         # An explicit pick is never silently swapped for another host, so it gets no fallback list.
         candidates = candidates[offer_rank - 1:offer_rank] if offer_rank else candidates
         best = candidates[0]

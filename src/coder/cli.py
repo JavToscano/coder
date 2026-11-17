@@ -39,6 +39,19 @@ class RichUI:
     def confirm(self, msg: str, *, default: bool = False) -> bool:
         return Confirm.ask(msg, default=default, console=console)
 
+    def choose_offer(self, title, found, download_gb, session_hours, top, interactive) -> int:
+        """Index of the offer to rent. Interactive terminals get an arrow-key menu; otherwise #1 after showing the table."""
+        n = min(top, len(found))
+        if not (interactive and sys.stdin.isatty() and console.is_terminal):
+            console.print(_offers_table(title, found, download_gb, session_hours, top))
+            return 0
+        from .menu import select_index
+        console.print("[dim]↑/↓ to move, Enter to rent, q to cancel[/dim]")
+        idx = select_index(console, n, lambda cur: _offers_table(title, found, download_gb, session_hours, top, cur))
+        if idx is None:
+            raise CoderError("Aborted.")
+        return idx
+
     def show_plan(self, offer, est, model, variant_name, variant, engine, context) -> None:
         t = Table(title=f"{model.display_name} ({variant_name}, {variant.quant}) on {engine}", show_header=False)
         t.add_row("GPU", f"{offer.num_gpus}x {offer.gpu_name}  ({offer.total_vram_gb:.0f} GB VRAM total)")
@@ -48,6 +61,23 @@ class RichUI:
         t.add_row(f"{est.session_hours:g} h session (est.)", f"${est.session_cost:.2f} total")
         t.add_row("Monthly @ 22 days (est.)", f"${est.monthly_cost:.0f}")
         console.print(t)
+
+
+def _offers_table(title: str, found, download_gb: float, session_hours: float, top: int, cursor: int | None = None) -> Table:
+    t = Table(title=title)
+    if cursor is not None:
+        t.add_column("")
+    for c in ("#", "GPUs", "VRAM", "$/h", "Reliab.", "Down Mb/s", "Where", "Est. startup", f"Est. {session_hours:g}h"):
+        t.add_column(c)
+    for i, o in enumerate(found[:top]):
+        e = costs.estimate(o, download_gb, session_hours)
+        row = [str(i + 1), f"{o.num_gpus}x {o.gpu_name}", f"{o.total_vram_gb:.0f} GB", f"{o.dph_total:.2f}", f"{o.reliability:.3f}",
+               f"{o.inet_down_mbps:.0f}", o.geolocation, f"{e.startup_minutes:.0f} min", f"${e.session_cost:.2f}"]
+        if cursor is not None:
+            t.add_row("[bold green]▶[/bold green]" if i == cursor else "", *row, style="bold reverse" if i == cursor else None)
+        else:
+            t.add_row(*row)
+    return t
 
 
 def _load() -> Config:
@@ -76,21 +106,38 @@ def _guard(fn):
 
 
 def _pick_model(cfg: Config, variant: str | None) -> tuple[str, str | None]:
-    """Numbered menu of every model/variant; Enter accepts the configured default."""
+    """Arrow-key menu of every model/variant (numbered prompt without a terminal); starts on the configured default."""
     rows = [(m, vn, v) for m in load_registry() for vn, v in m.variants.items() if variant in (None, vn)]
     if not rows:
         raise CoderError(f"No registered model has variant '{variant}'. See `coder models`.")
     default = next((i for i, (m, vn, _) in enumerate(rows, 1) if m.key == cfg.model and vn == m.default_variant), 1)
-    t = Table(title="Select a model")
-    for c in ("#", "Model", "Variant", "Size", "GPUs", "Min VRAM", "Description"):
-        t.add_column(c, overflow="fold")
-    for i, (m, vn, v) in enumerate(rows, 1):
-        mark = " [green](default)[/green]" if i == default else ""
-        t.add_row(str(i), f"{m.display_name}{mark}", vn, f"~{v.download_gb:g}GB", "/".join(map(str, v.gpus)),
-                  f"{v.min_total_vram_gb:g}GB", m.description)
-    console.print(t)
-    n = IntPrompt.ask("Model number", choices=[str(i) for i in range(1, len(rows) + 1)], default=default,
-                      show_choices=False, console=console)
+    def table(cursor: int | None) -> Table:
+        t = Table(title="Select a model")
+        if cursor is not None:
+            t.add_column("")
+        for c in ("#", "Model", "Variant", "Size", "GPUs", "Min VRAM", "Description"):
+            t.add_column(c, overflow="fold")
+        for i, (m, vn, v) in enumerate(rows):
+            mark = " [green](default)[/green]" if i + 1 == default else ""
+            row = [str(i + 1), f"{m.display_name}{mark}", vn, f"~{v.download_gb:g}GB", "/".join(map(str, v.gpus)),
+                   f"{v.min_total_vram_gb:g}GB", m.description]
+            if cursor is not None:
+                t.add_row("[bold green]▶[/bold green]" if i == cursor else "", *row, style="bold reverse" if i == cursor else None)
+            else:
+                t.add_row(*row)
+        return t
+
+    if console.is_terminal:
+        from .menu import select_index
+        console.print("[dim]↑/↓ to move, Enter to select, q to cancel[/dim]")
+        idx = select_index(console, len(rows), table, default - 1)
+        if idx is None:
+            raise CoderError("Aborted.")
+        n = idx + 1
+    else:
+        console.print(table(None))
+        n = IntPrompt.ask("Model number", choices=[str(i) for i in range(1, len(rows) + 1)], default=default,
+                          show_choices=False, console=console)
     m, vn, _ = rows[n - 1]
     return m.key, vn
 
@@ -189,13 +236,7 @@ def offers(
     if not found:
         console.print("No matching offers. Try raising limits.max_hourly_price or relaxing offers.* in your config.")
         return
-    t = Table(title=f"{spec.display_name} / {vname}: {len(found)} offers")
-    for c in ("#", "GPUs", "VRAM", "$/h", "Reliab.", "Down Mb/s", "Where", "Est. startup", f"Est. {cfg.limits.expected_session_hours:g}h"):
-        t.add_column(c)
-    for i, o in enumerate(found[:top], 1):
-        e = costs.estimate(o, v.download_gb, cfg.limits.expected_session_hours)
-        t.add_row(str(i), f"{o.num_gpus}x {o.gpu_name}", f"{o.total_vram_gb:.0f} GB", f"{o.dph_total:.2f}", f"{o.reliability:.3f}",
-                  f"{o.inet_down_mbps:.0f}", o.geolocation, f"{e.startup_minutes:.0f} min", f"${e.session_cost:.2f}")
+    t = _offers_table(f"{spec.display_name} / {vname}: {len(found)} offers", found, v.download_gb, cfg.limits.expected_session_hours, top)
     console.print(t)
 
 

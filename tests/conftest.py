@@ -82,6 +82,7 @@ class FakeUI:
     def say(self, m): self.messages.append(m)
     def warn(self, m): self.warnings.append(m)
     def confirm(self, m, *, default=False): return self.answer
+    def choose_offer(self, *a): return 0
     def show_plan(self, *a): self.plans.append(a)
 
 
