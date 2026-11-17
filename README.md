@@ -37,11 +37,11 @@ ln -s "$PWD/.venv/bin/coder" /usr/local/bin/coder    # or add .venv/bin to PATH
 
 | Command | What it does |
 |---|---|
-| `coder start [-m model] [--variant fp8\|bf16] [--engine vllm\|sglang] [--context N] [-y]` | Full startup. Reuses an active session instead of renting a second box. Without `-m`, shows a model menu. |
+| `coder start [-m model] [--variant fp8\|bf16] [--engine vllm\|sglang] [--context N] [-o N] [-y]` | Full startup. Reuses an active session instead of renting a second box. In a terminal, arrow-key menus (↑/↓, Enter, `q` to cancel) pick the model (skipped with `-m`) and the offer (top 8; skipped with `-o N`). `-y` skips both and rents the best offer. |
 | `coder stop [-y]` | Warns about in-flight requests, closes the tunnel, restores OpenCode config, destroys the instance, verifies it is gone, prints cost. |
 | `coder destroy [-y]` | Same, skipping graceful checks. Also the recovery path after a failed cleanup. |
 | `coder status` | Instance, GPU, model, tunnel state, duration, cost, month-to-date, warnings. |
-| `coder offers [-m model]` | Compatible offers, best value first, with cost estimates. |
+| `coder offers [-m model] [--top N]` | Compatible offers, best value first, with cost estimates. `start -o N` rents row N (no fallback hosts). |
 | `coder models [--details]` | Model registry with requirements and notes. |
 | `coder logs [-n 100] [-f]` | Inference server log from the instance. |
 | `coder cleanup [--destroy]` | Find (and optionally destroy) `coder-managed:*` instances no local session owns. |
