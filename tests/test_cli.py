@@ -74,3 +74,24 @@ def test_config_show(monkeypatch, cfg):
     monkeypatch.setattr(cli, "load_config", lambda *a: Config())
     r = runner.invoke(cli.app, ["config"])
     assert r.exit_code == 0 and "max_hourly_price" in r.output
+
+
+def test_pick_model_menu_selects_model_and_variant(monkeypatch, cfg):
+    rows = [(m.key, vn) for m in load_registry() for vn in m.variants]
+    n = rows.index(("qwen3-coder-next-abliterated", "bf16")) + 1
+    monkeypatch.setattr(cli.IntPrompt, "ask", lambda *a, **k: n)
+    assert cli._pick_model(cfg, None) == ("qwen3-coder-next-abliterated", "bf16")
+
+
+def test_pick_model_menu_default_and_variant_filter(monkeypatch, cfg):
+    monkeypatch.setattr(cli.IntPrompt, "ask", lambda *a, default=None, **k: default)
+    assert cli._pick_model(cfg, None) == (cfg.model, "fp8")
+    key, vn = cli._pick_model(cfg, "bf16")
+    assert vn == "bf16"
+
+
+def test_start_shows_menu_only_when_interactive(patched, monkeypatch):
+    asked = []
+    monkeypatch.setattr(cli, "_pick_model", lambda c, v: asked.append(1) or ("qwen3-coder-next", "fp8"))
+    runner.invoke(cli.app, ["start", "--yes"])            # --yes: no menu
+    assert not asked

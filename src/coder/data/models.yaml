@@ -48,6 +48,28 @@ models:
         tool_call_parser: qwen3_coder
         notes: 80B params in BF16 is ~160 GB of weights, so a single 80 GB GPU can NOT serve it.
 
+  qwen3-coder-next-abliterated:
+    display_name: Huihui-Qwen3-Coder-Next-abliterated
+    served_name: Huihui-Qwen3-Coder-Next-abliterated
+    description: Community abliterated (refusal-removed) fine-tune of Qwen3-Coder-Next. 80B MoE (3B active), BF16 only.
+    context_length: 262144
+    default_context: 131072
+    tool_calling: true
+    sampling: {temperature: 1.0, top_p: 0.95, top_k: 40}
+    default_variant: bf16
+    variants:
+      bf16:
+        repo: huihui-ai/Huihui-Qwen3-Coder-Next-abliterated
+        quant: bf16
+        download_gb: 160
+        min_total_vram_gb: 190
+        min_gpu_vram_gb: 48
+        gpus: [4, 8]
+        engines: [vllm, sglang]
+        min_engine_version: {vllm: "0.15.0", sglang: "0.5.8"}
+        tool_call_parser: qwen3_coder
+        notes: Same qwen3_next architecture and chat template as Qwen/Qwen3-Coder-Next, so its serving recipe and parser are reused (the card documents none of its own). 159 GB of BF16 safetensors (from the HF API), so a single 80 GB GPU can NOT serve it. Not gated. Third-party model; no FP8 build exists.
+
   qwen3-coder-30b-a3b:
     display_name: Qwen3-Coder-30B-A3B-Instruct
     served_name: Qwen3-Coder-30B-A3B
@@ -77,6 +99,27 @@ models:
         gpus: [1, 2]
         engines: [vllm, sglang]
         tool_call_parser: qwen3_coder
+
+  qwen3-coder-30b-a3b-abliterated:
+    display_name: Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated
+    served_name: Huihui-Qwen3-Coder-30B-A3B-abliterated
+    description: Community abliterated (refusal-removed) Qwen3-Coder-30B-A3B. 30B MoE (3.3B active), BF16 only, fits one 80 GB GPU.
+    context_length: 262144
+    default_context: 131072
+    tool_calling: true
+    sampling: {temperature: 0.7, top_p: 0.8, top_k: 20, repetition_penalty: 1.05}
+    default_variant: bf16
+    variants:
+      bf16:
+        repo: huihui-ai/Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated
+        quant: bf16
+        download_gb: 62
+        min_total_vram_gb: 80
+        min_gpu_vram_gb: 40
+        gpus: [1, 2]
+        engines: [vllm, sglang]
+        tool_call_parser: qwen3_coder
+        notes: Same qwen3_moe architecture as Qwen/Qwen3-Coder-30B-A3B-Instruct, so its settings and the qwen3_coder parser are reused (the card documents no serving recipe). 61 GB of BF16 safetensors (from the HF API). Not gated. Third-party model; no FP8 build exists.
 
   devstral-small-2:
     display_name: Devstral Small 2 (24B)

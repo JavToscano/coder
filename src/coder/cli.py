@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Annotated, Optional
@@ -10,7 +11,7 @@ from typing import Annotated, Optional
 import typer
 import yaml
 from rich.console import Console
-from rich.prompt import Confirm, FloatPrompt, Prompt
+from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
 
 from . import costs, opencode, paths
@@ -74,6 +75,26 @@ def _guard(fn):
     return wrapper
 
 
+def _pick_model(cfg: Config, variant: str | None) -> tuple[str, str | None]:
+    """Numbered menu of every model/variant; Enter accepts the configured default."""
+    rows = [(m, vn, v) for m in load_registry() for vn, v in m.variants.items() if variant in (None, vn)]
+    if not rows:
+        raise CoderError(f"No registered model has variant '{variant}'. See `coder models`.")
+    default = next((i for i, (m, vn, _) in enumerate(rows, 1) if m.key == cfg.model and vn == m.default_variant), 1)
+    t = Table(title="Select a model")
+    for c in ("#", "Model", "Variant", "Size", "GPUs", "Min VRAM", "Description"):
+        t.add_column(c, overflow="fold")
+    for i, (m, vn, v) in enumerate(rows, 1):
+        mark = " [green](default)[/green]" if i == default else ""
+        t.add_row(str(i), f"{m.display_name}{mark}", vn, f"~{v.download_gb:g}GB", "/".join(map(str, v.gpus)),
+                  f"{v.min_total_vram_gb:g}GB", m.description)
+    console.print(t)
+    n = IntPrompt.ask("Model number", choices=[str(i) for i in range(1, len(rows) + 1)], default=default,
+                      show_choices=False, console=console)
+    m, vn, _ = rows[n - 1]
+    return m.key, vn
+
+
 @app.command()
 @_guard
 def start(
@@ -84,8 +105,14 @@ def start(
     offer: Annotated[Optional[int], typer.Option("--offer", "-o", min=1, help="Rent row N of `coder offers` instead of the top one.")] = None,
     yes: YES = False,
 ) -> None:
-    """Rent a GPU, load the model, open the tunnel and wire up OpenCode."""
-    mgr = _manager(_load())
+    """Rent a GPU, load the model, open the tunnel and wire up OpenCode.
+
+    Without --model, an interactive terminal gets a menu to pick the model.
+    """
+    cfg = _load()
+    if model is None and not yes and sys.stdin.isatty() and SessionStore().load() is None:
+        model, variant = _pick_model(cfg, variant)
+    mgr = _manager(cfg)
     s, reused = mgr.start(model, variant=variant, engine=engine, context=context, yes=yes, offer_rank=offer)
     console.print(f"\n[bold green]{'Reusing existing session' if reused else 'Ready'}.[/bold green]")
     console.print(f"  Model     {s.served_name}  ({s.engine}, {s.context_length} ctx)")

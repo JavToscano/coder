@@ -46,7 +46,7 @@ Keys are never read from or written to the config file (the config schema has no
 
 | Command | What it does |
 |---|---|
-| `coder start [-m model] [--variant fp8\|bf16] [--engine vllm\|sglang] [--context N] [-y]` | Full startup. Reuses the active session (re-opens a dead tunnel) instead of renting a second box. |
+| `coder start [-m model] [--variant fp8\|bf16] [--engine vllm\|sglang] [--context N] [-y]` | Full startup. Reuses the active session (re-opens a dead tunnel) instead of renting a second box. | Run without `-m` in a terminal and you get a numbered model menu (Enter = your configured default); `-y` skips it.
 | `coder stop [-y]` | Checks in-flight requests (warns), closes tunnel, restores OpenCode config, **destroys** the instance, verifies it is gone, prints cost. |
 | `coder destroy [-y]` | Same, skipping graceful checks. Also the recovery path after a failed cleanup. |
 | `coder status` | Provider, instance, GPU, VRAM, model, instance/server/tunnel state, duration, cost, month-to-date, warnings. |
@@ -94,7 +94,9 @@ A new provider (e.g. RunPod) means implementing `providers.base.Provider` and ad
 | Key | Default checkpoint | Weights | Minimum rental | Notes |
 |---|---|---|---|---|
 | `qwen3-coder-next` | `Qwen/Qwen3-Coder-Next-FP8` | ~85 GB | **2× ≥40 GB GPUs (≥150 GB total)**, e.g. 2×H100/A100 80GB | 80B MoE. Cards require vLLM ≥0.15.0 / SGLang ≥0.5.8 and use TP=2. BF16 is ~160 GB, so a single 80 GB GPU **cannot** serve it (BF16 variant needs 4+ GPUs). |
+| `qwen3-coder-next-abliterated` | `huihui-ai/Huihui-Qwen3-Coder-Next-abliterated` (BF16) | ~160 GB | 4× ≥48 GB | Community abliterated Qwen3-Coder-Next; same recipe/parser, BF16 only. |
 | `qwen3-coder-30b-a3b` | `…-Instruct-FP8` | ~32 GB | 1× ≥40 GB | Cheapest option. |
+| `qwen3-coder-30b-a3b-abliterated` | `huihui-ai/Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated` (BF16) | ~62 GB | 1× ≥40 GB | Community abliterated 30B-A3B; same recipe/parser, BF16 only. |
 | `devstral-small-2` | `mistralai/Devstral-Small-2-24B-Instruct-2512` (FP8) | ~26 GB | 1× ≥24 GB, ≥40 GB total | Card shows TP=2; single GPU is expected to work, undocumented. |
 | `qwen3.8-27b` | `Qwen/Qwen3.8-27B` (BF16) | ~56 GB | ≥80 GB total | Card gives no serve flags; parsers copied from the Qwen3.6-27B card. |
 | `gpt-oss-120b` | `openai/gpt-oss-120b` (MXFP4) | ~65 GB | 1× 80 GB | Parser `openai` is not stated on the card. |
