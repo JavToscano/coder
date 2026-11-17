@@ -3,6 +3,7 @@ server launch/health, watchdog, logs. All secrets travel over ssh stdin into 060
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import time
 from importlib import resources
@@ -10,11 +11,23 @@ from typing import Callable
 
 from .config import StorageConfig
 from .errors import ProvisioningError, SSHError
-from .inference import ServeCommand, models_ready, serve_script
+from .inference import REMOTE_PORT, ServeCommand, models_ready, serve_script
 from .ssh import SSHClient
 
 HOME = "/root/coder"
 MANIFEST = ".coder-manifest.json"
+
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def last_log_line(text: str) -> str:
+    """Last non-empty line of a server log, keeping only the latest frame of \\r progress bars."""
+    for chunk in reversed(_ANSI.sub("", text).replace("\r", "\n").splitlines()):
+        chunk = chunk.strip()
+        if chunk:
+            return chunk[:160]
+    return ""
 
 
 def _dotenv(values: dict[str, str]) -> str:
@@ -140,18 +153,37 @@ class Remote:
         r = self.ssh.run("pgrep -f 'vllm serve|sglang.launch_server' >/dev/null && echo up || echo down", check=False, timeout=45)
         return "up" in r.stdout
 
-    def wait_healthy(self, base_url: str, api_key: str, served_name: str, timeout_s: float) -> None:
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
+    def wait_healthy(self, base_url: str, api_key: str, served_name: str, timeout_s: float,
+                     *, progress_every_s: float = 30.0, clock: Callable[[], float] = time.monotonic) -> None:
+        deadline = clock() + timeout_s
+        next_report = clock() + progress_every_s
+        warned_tunnel = False
+        while clock() < deadline:
             if models_ready(base_url, api_key, served_name):
                 return
             try:
                 if not self.server_alive():
                     raise ProvisioningError("Inference server exited during startup.\n" + self.logs(40))
+                if clock() >= next_report:
+                    next_report = clock() + progress_every_s
+                    # Server answers on the instance but not through the tunnel: say so instead of waiting silently.
+                    if not warned_tunnel and self.server_answers_locally():
+                        warned_tunnel = True
+                        self.log("Server is up on the instance but unreachable through the SSH tunnel; "
+                                 "check that the local port is free and the tunnel is alive (`coder status`).")
+                    self.log("  " + (last_log_line(self.logs(30)) or "waiting for server output…"))
             except SSHError:
                 pass
             self._sleep(8)
         raise ProvisioningError(f"Inference server not ready within {int(timeout_s)}s.\n" + self.logs(40))
+
+    def server_answers_locally(self) -> bool:
+        r = self.ssh.run(
+            f"set -a; . {HOME}/secrets.env; set +a; "
+            f"curl -s -o /dev/null -w '%{{http_code}}' -H \"Authorization: Bearer $CODER_API_KEY\" "
+            f"http://127.0.0.1:{REMOTE_PORT}/v1/models",
+            check=False, timeout=45)
+        return r.stdout.strip() == "200"
 
     def logs(self, lines: int = 100) -> str:
         r = self.ssh.run(f"tail -n {int(lines)} {HOME}/server.log 2>&1", check=False, timeout=45)
